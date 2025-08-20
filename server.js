@@ -75,7 +75,7 @@ function predictNext() {
 }
 
 function startBot(selectedStrategy) {
-  console.log(`Starting Aviator predictor with strategy ${selectedStrategy}`);
+ console.log(`Starting Aviator predictor with strategy ${selectedStrategy}`);
   // Put your actual bot logic here that uses selectedStrategy
 }
 
