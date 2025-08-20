@@ -1,5 +1,5 @@
-'''js
-// server.js
+
+```js
 const express = require('express');
 const puppeteer = require('puppeteer');
 
@@ -7,6 +7,7 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 let gameRounds = [];
+let roundEnded = false;
 
 async function scrapeGameData() {
   const browser = await puppeteer.launch({ headless: true, args: ['--no-sandbox'] });
@@ -20,23 +21,38 @@ async function scrapeGameData() {
     if (gameRounds.length > 100) gameRounds.shift();
   });
 
+  page.exposeFunction('onRoundEnd', () => {
+    roundEnded = true;
+    console.log('Round ended!');
+  });
+
   await page.evaluate(() => {
-    const targetNode = document.querySelector('.c-status__text');
-    if (!targetNode) return;
+    const statusNode = document.querySelector('.c-status__text');
+    if (!statusNode) return;
+
+    let lastMultiplier = null;
 
     const observer = new MutationObserver(mutations => {
       mutations.forEach(mutation => {
         if (mutation.type === 'childList') {
           const text = mutation.target.textContent;
           const m = text.match(/x(\d+\.\d+)/);
+
           if (m && m) {
-            window.onRoundUpdate(parseFloat(m));
+            const multiplier = parseFloat(m);
+            window.onRoundUpdate(multiplier);
+            lastMultiplier = multiplier;
+          } else {
+            if (lastMultiplier!== null) {
+              window.onRoundEnd();
+              lastMultiplier = null;
+            }
           }
         }
       });
     });
 
-    observer.observe(targetNode, { childList: true });
+    observer.observe(statusNode, { childList: true });
   });
 
   console.log('Scraper running...');
@@ -49,28 +65,15 @@ function predictNext() {
 }
 
 app.get('/predict', (req, res) => {
+  if (!roundEnded) {
+    return res.json({ status: "round_in_progress", message: "Waiting for round to end..." });
+  }
+  roundEnded = false; // Reset for next round
   const prediction = predictNext();
-  res.json({ predictedMultiplier: prediction });
+  res.json({ status: "ready", predictedMultiplier: prediction });
 });
 
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
   scrapeGameData();
 });
-```
-
-Also create or update `package.json` to include:
-
-```json
-{
-  "name": "aviator-predictor",
-  "version": "1.0.0",
-  "main": "server.js",
-  "scripts": {
-    "start": "node server.js"
-  },
-  "dependencies": {
-    "express": "^4.18.2",
-    "puppeteer": "^20.8.1"
-  }
-}
