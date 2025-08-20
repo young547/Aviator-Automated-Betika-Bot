@@ -1,5 +1,4 @@
 
-```js
 const express = require('express');
 const puppeteer = require('puppeteer');
 const readline = require('readline');
@@ -23,7 +22,7 @@ async function scrapeGameData() {
     await page.waitForSelector('.c-status__text');
 
     page.exposeFunction('onRoundUpdate', (multiplier) => {
-      console.log('New multiplier:', multiplier);
+      console.log(`New multiplier: ${multiplier}`);
       gameRounds.push({ timestamp: Date.now(), multiplier });
       if (gameRounds.length > 100) gameRounds.shift();
     });
@@ -64,7 +63,7 @@ async function scrapeGameData() {
 
     console.log('Scraper running...');
   } catch (err) {
-    console.error('Scraper error:', err);
+    console.error(`Scraper error: ${err}`);
   }
 }
 
@@ -75,8 +74,8 @@ function predictNext() {
 }
 
 function startBot(selectedStrategy) {
- console.log(`Starting Aviator predictor with strategy ${selectedStrategy}`);
-  // Put your actual bot logic here that uses selectedStrategy
+  console.log(`Starting Aviator predictor with strategy ${selectedStrategy}`);
+  // Your bot logic here that uses selectedStrategy
 }
 
 function askUserForStrategy() {
