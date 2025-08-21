@@ -7,18 +7,19 @@ const PORT = process.env.PORT || 3000;
 let gameRounds = [];
 
 const multiplierSelectors = [
+  'span.css-1ih7zt1',          
   'span.chakra-text.css-1av7bxt',
   'div[class*="multiplier"]',
-  // Add more possible selectors here if needed
+  // add more here if needed
 ];
 
 async function findMultiplierSelector(page) {
   for (const selector of multiplierSelectors) {
     try {
       await page.waitForSelector(selector, { timeout: 3000 });
-      return selector; // Selector found
+      return selector; // found working one
     } catch {
-      // Not found, try next
+      // try next
     }
   }
   throw new Error('No valid multiplier selector found');
@@ -63,10 +64,11 @@ async function scrapeGameData() {
       observer.observe(el, { childList: true, subtree: true });
     }, multiplierSelector);
 
+    // Check Provably Fair popup every 5 seconds
     setInterval(async () => {
       try {
         const modalSelector = '.modal-content';
-        await page.waitForSelector(modalSelector, { timeout: 6000 });
+        await page.waitForSelector(modalSelector, { timeout: 3000 });
 
         const popupData = await page.evaluate(() => {
           const modal = document.querySelector('.modal-content');
