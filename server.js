@@ -9,8 +9,6 @@ const PORT = process.env.PORT || 3000;
 let gameRounds = [];
 let roundEnded = false;
 
-const strategy = process.env.STRATEGY;
-
 async function scrapeGameData() {
   try {
     const browser = await puppeteer.launch({
@@ -18,10 +16,15 @@ async function scrapeGameData() {
       args: ['--no-sandbox', '--disable-setuid-sandbox'],
     });
     const page = await browser.newPage();
-    await page.goto('https://betika.com/spribe/aviator', { waitUntil: 'networkidle2' });
-    await page.waitForSelector('.c-status__text');
 
-    page.exposeFunction('onRoundUpdate', (multiplier) => {
+    await page.goto('https://www.betika.com/en-ke/aviator', {
+      waitUntil: 'networkidle2',
+      timeout: 60000,
+    });
+
+    await page.waitForSelector('div.status > span.status-text', { timeout: 60000 });
+
+    page.exposeFunction('onRoundUpdate', multiplier => {
       console.log(`New multiplier: ${multiplier}`);
       gameRounds.push({ timestamp: Date.now(), multiplier });
       if (gameRounds.length > 100) gameRounds.shift();
@@ -33,7 +36,7 @@ async function scrapeGameData() {
     });
 
     await page.evaluate(() => {
-      const statusNode = document.querySelector('.c-status__text');
+      const statusNode = document.querySelector('div.status > span.status-text');
       if (!statusNode) return;
 
       let lastMultiplier = null;
@@ -48,11 +51,9 @@ async function scrapeGameData() {
               const multiplier = parseFloat(match);
               window.onRoundUpdate(multiplier);
               lastMultiplier = multiplier;
-            } else {
-              if (lastMultiplier!== null) {
-                window.onRoundEnd();
-                lastMultiplier = null;
-              }
+            } else if (lastMultiplier!== null) {
+              window.onRoundEnd();
+              lastMultiplier = null;
             }
           }
         });
@@ -63,29 +64,30 @@ async function scrapeGameData() {
 
     console.log('Scraper running...');
   } catch (err) {
-    console.error(`Scraper error: ${err}`);
+    console.error('Scraper error:', err);
   }
 }
 
 function predictNext() {
-  if (!gameRounds.length) return 1;
+  if (gameRounds.length === 0) return null;
   const lastFive = gameRounds.slice(-5).map(r => r.multiplier);
-  return lastFive.reduce((a, b) => a + b, 0) / lastFive.length;
+  const avg = lastFive.reduce((a, b) => a + b, 0) / lastFive.length;
+  return avg;
 }
 
-function startBot(selectedStrategy) {
-  console.log(`Starting Aviator predictor with strategy ${selectedStrategy}`);
-  // Your bot logic here that uses selectedStrategy
+function startBot() {
+  console.log('Starting Aviator bot...');
+  // Add your bot logic here if needed
 }
 
-function askUserForStrategy() {
+function askStrategy() {
   const rl = readline.createInterface({
     input: process.stdin,
     output: process.stdout,
   });
 
   rl.question('Select strategy (1-4): ', (answer) => {
-    if (['1', '2', '3', '4'].includes(answer)) {
+    if (['1','2','3','4'].includes(answer)) {
       startBot(answer);
     } else {
       console.log('Invalid choice. Exiting.');
@@ -96,22 +98,19 @@ function askUserForStrategy() {
 }
 
 app.get('/predict', (req, res) => {
-  if (!roundEnded) {
-    return res.json({ status: 'round_in_progress', message: 'Waiting for round to end...' });
-  }
+  if (!roundEnded) return res.json({ status: 'round_in_progress', message: 'Waiting for round to end...' });
   roundEnded = false;
   const prediction = predictNext();
-  res.json({ status: 'ready', predictedMultiplier: prediction });
+  res.json({ status: 'ready', prediction });
 });
 
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
   scrapeGameData();
 
-  if (strategy && ['1', '2', '3', '4'].includes(strategy)) {
-    console.log(`Auto-selected strategy ${strategy}`);
-    startBot(strategy);
+  if (process.env.STRATEGY && ['1','2','3','4'].includes(process.env.STRATEGY)) {
+    startBot(process.env.STRATEGY);
   } else {
-    askUserForStrategy();
+    askStrategy();
   }
 });
