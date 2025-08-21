@@ -1,7 +1,6 @@
 
 FROM node:18
 
-Install dependencies required by Chromium for Puppeteer
 RUN apt-get update && apt-get install -y \
     libnss3 \
     libatk1.0-0 \
