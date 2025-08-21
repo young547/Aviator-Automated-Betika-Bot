@@ -1,7 +1,7 @@
 
-const express = require('express');
-const puppeteer = require('puppeteer');
-const readline = require('readline');
+import express from 'express';
+import puppeteer from 'puppeteer';
+import readline from 'readline';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
