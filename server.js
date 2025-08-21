@@ -6,6 +6,24 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 let gameRounds = [];
 
+const multiplierSelectors = [
+  'span.chakra-text.css-1av7bxt',
+  'div[class*="multiplier"]',
+  // Add more possible selectors here if needed
+];
+
+async function findMultiplierSelector(page) {
+  for (const selector of multiplierSelectors) {
+    try {
+      await page.waitForSelector(selector, { timeout: 3000 });
+      return selector; // Selector found
+    } catch {
+      // Not found, try next
+    }
+  }
+  throw new Error('No valid multiplier selector found');
+}
+
 async function scrapeGameData() {
   const browser = await puppeteer.launch({
     headless: true,
@@ -13,71 +31,76 @@ async function scrapeGameData() {
   });
   const page = await browser.newPage();
 
-  await page.goto('https://www.betika.com/en-ke/aviator', {
-    waitUntil: 'networkidle2',
-    timeout: 60000,
-  });
-
-  const multiplierSelector = 'div[class*="multiplier"]';
-
-  await page.waitForSelector(multiplierSelector, { timeout: 10000 });
-
-  await page.exposeFunction('onRoundUpdate', (multiplier) => {
-    console.log('Multiplier updated:', multiplier);
-    gameRounds.push({ timestamp: Date.now(), multiplier });
-    if (gameRounds.length > 100) gameRounds.shift();
-  });
-
-  await page.evaluate((selector) => {
-    const el = document.querySelector(selector);
-    if (!el) return;
-
-    const observer = new MutationObserver((mutations) => {
-      mutations.forEach((m) => {
-        const text = m.target.textContent;
-        const match = text.match(/(\d+(\.\d+)?)x/);
-        if (match && match) {
-          window.onRoundUpdate(parseFloat(match));
-        }
-      });
+  try {
+    await page.goto('https://www.betika.com/en-ke/aviator', {
+      waitUntil: 'networkidle2',
+      timeout: 60000,
     });
 
-    observer.observe(el, { childList: true, subtree: true });
-  }, multiplierSelector);
+    const multiplierSelector = await findMultiplierSelector(page);
+    console.log(`Using multiplier selector: ${multiplierSelector}`);
 
-  // Check for Provably Fair popup every 5 seconds for RNG data
-  setInterval(async () => {
-    try {
-      const modalSelector = '.modal-content';
-      await page.waitForSelector(modalSelector, { timeout: 3000 });
+    await page.exposeFunction('onRoundUpdate', (multiplier) => {
+      console.log('Multiplier updated:', multiplier);
+      gameRounds.push({ timestamp: Date.now(), multiplier });
+      if (gameRounds.length > 100) gameRounds.shift();
+    });
 
-      const popupData = await page.evaluate(() => {
-        const modal = document.querySelector('.modal-content');
-        if (!modal) return null;
-        const getValueByLabel = (label) => {
-          const labelEl = [...modal.querySelectorAll('div')].find(div =>
-            div.textContent.includes(label)
-          );
-          return labelEl?.nextElementSibling?.textContent.trim() || null;
-        };
-        return {
-          round: getValueByLabel('ROUND'),
-          multiplier: modal.querySelector('span.purple')?.textContent.trim() || null,
-          serverSeed: getValueByLabel('Server Seed'),
-          clientSeed: getValueByLabel('Client Seed'),
-          combinedHash: getValueByLabel('Combined SHA512 Hash'),
-          hex: getValueByLabel('Hex'),
-          decimal: getValueByLabel('Decimal'),
-          result: getValueByLabel('Result'),
-        };
+    await page.evaluate((selector) => {
+      const el = document.querySelector(selector);
+      if (!el) return;
+
+      const observer = new MutationObserver((mutations) => {
+        mutations.forEach((m) => {
+          const text = m.target.textContent;
+          const match = text.match(/(\d+(\.\d+)?)x/);
+          if (match && match) {
+            window.onRoundUpdate(parseFloat(match));
+          }
+        });
       });
-      if (popupData) console.log('Provably Fair RNG data:', popupData);
-    } catch {
-      // Popup not open or no data, ignore silently
-    }
-  }, 5000);
 
-  console.log('🛫 Scraping Betika Aviator multipliers and RNG...');
+      observer.observe(el, { childList: true, subtree: true });
+    }, multiplierSelector);
+
+    setInterval(async () => {
+      try {
+        const modalSelector = '.modal-content';
+        await page.waitForSelector(modalSelector, { timeout: 6000 });
+
+        const popupData = await page.evaluate(() => {
+          const modal = document.querySelector('.modal-content');
+          if (!modal) return null;
+
+          const getValueByLabel = (label) => {
+            const labelEl = [...modal.querySelectorAll('div')].find(div =>
+              div.textContent.includes(label)
+            );
+            return labelEl?.nextElementSibling?.textContent.trim() || null;
+          };
+
+          return {
+            round: getValueByLabel('ROUND'),
+            multiplier: modal.querySelector('span.purple')?.textContent.trim() || null,
+            serverSeed: getValueByLabel('Server Seed'),
+            clientSeed: getValueByLabel('Client Seed'),
+            combinedHash: getValueByLabel('Combined SHA512 Hash'),
+            hex: getValueByLabel('Hex'),
+            decimal: getValueByLabel('Decimal'),
+            result: getValueByLabel('Result'),
+          };
+        });
+
+        if (popupData) console.log('Provably Fair RNG data:', popupData);
+      } catch {
+        // popup not open, ignore
+      }
+    }, 5000);
+
+    console.log('🚀 Scraper running...');
+  } catch (error) {
+    console.error('Scraping error:', error.message);
+  }
 }
 
 function predictNext() {
@@ -91,6 +114,6 @@ app.get('/predict', (req, res) => {
   res.json({ predictedMultiplier: predictNext() });
 });
 
-app.listen(PORT, () => console.log(`✅ Server running http://localhost:${PORT}`));
+app.listen(PORT, () => console.log(`✅ Server running at http://localhost:${PORT}`));
 
 scrapeGameData();
