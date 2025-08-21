@@ -68,4 +68,3 @@ app.get('/predict', (req, res) => {
 });
 console.log(`✅ Server running on http://localhost:{PORT}`);
   scrapeGameData();
-});
