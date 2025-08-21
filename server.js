@@ -9,55 +9,79 @@ let gameRounds = [];
 async function scrapeGameData() {
   const browser = await puppeteer.launch({
     headless: true,
-    args: ['--no-sandbox', '--disable-setuid-sandbox']
+    args: ['--no-sandbox', '--disable-setuid-sandbox'],
   });
   const page = await browser.newPage();
 
-  try {
-    await page.goto('https://www.betika.com/en-ke/aviator', {
-      waitUntil: 'domcontentloaded',
-      timeout: 60000
+  await page.goto('https://www.betika.com/en-ke/aviator', {
+    waitUntil: 'networkidle2',
+    timeout: 60000,
+  });
+
+  const multiplierSelector = 'div[class*="multiplier"]';
+
+  await page.waitForSelector(multiplierSelector, { timeout: 10000 });
+
+  await page.exposeFunction('onRoundUpdate', (multiplier) => {
+    console.log('Multiplier updated:', multiplier);
+    gameRounds.push({ timestamp: Date.now(), multiplier });
+    if (gameRounds.length > 100) gameRounds.shift();
+  });
+
+  await page.evaluate((selector) => {
+    const el = document.querySelector(selector);
+    if (!el) return;
+
+    const observer = new MutationObserver((mutations) => {
+      mutations.forEach((m) => {
+        const text = m.target.textContent;
+        const match = text.match(/(\d+(\.\d+)?)x/);
+        if (match && match) {
+          window.onRoundUpdate(parseFloat(match));
+        }
+      });
     });
 
-    const selector = '.c-multiplier'; // Replace with the actual selector
+    observer.observe(el, { childList: true, subtree: true });
+  }, multiplierSelector);
 
-    const elementHandle = await page.waitForSelector(selector, { timeout: 10000 }).catch(() => null);
+  // Check for Provably Fair popup every 5 seconds for RNG data
+  setInterval(async () => {
+    try {
+      const modalSelector = '.modal-content';
+      await page.waitForSelector(modalSelector, { timeout: 3000 });
 
-    if (elementHandle) {
-      page.exposeFunction('onRoundUpdate', (multiplier) => {
-        console.log('New multiplier:', multiplier);
-        gameRounds.push({ timestamp: Date.now(), multiplier });
-        if (gameRounds.length > 100) gameRounds.shift();
+      const popupData = await page.evaluate(() => {
+        const modal = document.querySelector('.modal-content');
+        if (!modal) return null;
+        const getValueByLabel = (label) => {
+          const labelEl = [...modal.querySelectorAll('div')].find(div =>
+            div.textContent.includes(label)
+          );
+          return labelEl?.nextElementSibling?.textContent.trim() || null;
+        };
+        return {
+          round: getValueByLabel('ROUND'),
+          multiplier: modal.querySelector('span.purple')?.textContent.trim() || null,
+          serverSeed: getValueByLabel('Server Seed'),
+          clientSeed: getValueByLabel('Client Seed'),
+          combinedHash: getValueByLabel('Combined SHA512 Hash'),
+          hex: getValueByLabel('Hex'),
+          decimal: getValueByLabel('Decimal'),
+          result: getValueByLabel('Result'),
+        };
       });
-
-      await page.evaluate((selector) => {
-        const targetNode = document.querySelector(selector);
-        if (!targetNode) return;
-
-        const observer = new MutationObserver(mutations => {
-          mutations.forEach(mutation => {
-            const text = mutation.target.textContent;
-            const match = text.match(/x(\d+(\.\d+)?)/);
-            if (match && match[1]) {
-              window.onRoundUpdate(parseFloat(match[1]));
-            }
-          });
-        });
-
-        observer.observe(targetNode, { childList: true, subtree: true });
-      }, selector);
-
-      console.log('🔍 Scraping multipliers from Betika Aviator...');
-    } else {
-      console.warn(`⚠️ Selector "${selector}" not found. Skipping scraping.`);
+      if (popupData) console.log('Provably Fair RNG data:', popupData);
+    } catch {
+      // Popup not open or no data, ignore silently
     }
-  } catch (error) {
-    console.error('Error during scraping:', error.message);
-  }
+  }, 5000);
+
+  console.log('🛫 Scraping Betika Aviator multipliers and RNG...');
 }
 
 function predictNext() {
-  if (gameRounds.length < 5) return 1.00;
+  if (gameRounds.length < 5) return 1.0;
   const lastFive = gameRounds.slice(-5).map(r => r.multiplier);
   const avg = lastFive.reduce((a, b) => a + b, 0) / lastFive.length;
   return avg.toFixed(2);
@@ -66,5 +90,7 @@ function predictNext() {
 app.get('/predict', (req, res) => {
   res.json({ predictedMultiplier: predictNext() });
 });
-console.log(`✅ Server running on http://localhost:{PORT}`);
-  scrapeGameData();
+
+app.listen(PORT, () => console.log(`✅ Server running http://localhost:${PORT}`));
+
+scrapeGameData();
